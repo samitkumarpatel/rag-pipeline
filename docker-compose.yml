@@ -1,0 +1,160 @@
+# =============================================================================
+# Document Processing Service — Local dev stack
+#
+# Services:
+#   rabbitmq          RabbitMQ 4 broker + management UI
+#   api               FastAPI server (port 8082)
+#   worker-pdf        Celery worker for pdf_processing queue
+#   worker-docx       Celery worker for docx_processing queue
+#   worker-image      Celery worker for image_processing queue
+#   worker-text       Celery worker for text_processing queue
+#   flower            Celery monitoring UI (port 5555)
+#
+# Usage:
+#   docker compose up --build
+#   docker compose up --build --scale worker-pdf=3   # scale PDF workers
+#
+# Endpoints:
+#   FastAPI docs    http://localhost:8082/docs
+#   Health check    http://localhost:8082/health
+#   Metrics         http://localhost:8082/metrics
+#   RabbitMQ UI     http://localhost:15672  (guest/guest)
+#   Flower UI       http://localhost:5555
+# =============================================================================
+
+x-worker-base: &worker-base
+  build:
+    context: ./document-processing
+    dockerfile: Dockerfile
+    target: runtime
+  environment: &common-env
+    DOC_PROC_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    DOC_PROC_CELERY_RESULT_BACKEND: rpc://
+    DOC_PROC_VECTOR_STORE_URL: http://host.docker.internal:8083
+    DOC_PROC_OPENAI_API_KEY: ${DOC_PROC_OPENAI_API_KEY:-changeme}
+    DOC_PROC_ENVIRONMENT: development
+    DOC_PROC_LOG_LEVEL: INFO
+    DOC_PROC_STORAGE_BASE_DIR: /data/rag-uploads
+  volumes:
+    - upload_data:/data/rag-uploads:rw
+  depends_on:
+    volume-init:
+      condition: service_completed_successfully
+    rabbitmq:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+
+  # ── Message broker ──────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:management-alpine
+    container_name: doc-proc-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq:rw
+
+  # ── Ingestion Server ──────────────────────────────────────────────────
+  
+  volume-init:
+    image: alpine:3.21
+    container_name: rag-volume-init
+    command: ["sh", "-c", "chmod 1777 /data/rag-uploads"]
+    volumes:
+      - upload_data:/data/rag-uploads:rw
+    restart: "no"
+  
+  ingestion-service:
+    build:
+      context: ./ingestion-service
+      dockerfile: Dockerfile.jvm
+    container_name: rag-ingestion
+    ports:
+      - "8081:8081"
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+      INGESTION_STORAGE_BASE_DIR: /data/rag-uploads
+    volumes:
+      - upload_data:/data/rag-uploads:rw
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health | grep UP || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  
+  # ── FastAPI server ──────────────────────────────────────────────────
+  document-processing:
+    <<: *worker-base
+    container_name: doc-proc-api
+    command: server
+    ports:
+      - "8082:8082"
+    environment:
+      <<: *common-env
+      DOC_PROC_WORKERS: 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Celery workers — one per queue for independent scaling ────────────
+  worker-pdf:
+    <<: *worker-base
+    container_name: doc-proc-worker-pdf
+    command: celery-worker --queues=pdf_processing --concurrency=2
+
+  worker-docx:
+    <<: *worker-base
+    container_name: doc-proc-worker-docx
+    command: celery-worker --queues=docx_processing --concurrency=4
+
+  worker-image:
+    <<: *worker-base
+    container_name: doc-proc-worker-image
+    # Image OCR is CPU-bound — lower concurrency, more RAM per worker
+    command: celery-worker --queues=image_processing --concurrency=1
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  worker-text:
+    <<: *worker-base
+    container_name: doc-proc-worker-text
+    command: celery-worker --queues=text_processing --concurrency=8
+
+  # ── Celery Flower monitoring UI ─────────────────────────────────────
+  flower:
+    <<: *worker-base
+    container_name: doc-proc-flower
+    command: celery-flower
+    ports:
+      - "5555:5555"
+    depends_on:
+      - rabbitmq
+
+volumes:
+  rabbitmq_data:
+  upload_data:

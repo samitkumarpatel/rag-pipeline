@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 – Build
+#   GraalVM 25 Community Edition used as the JDK to compile and package the
+#   application into a Spring Boot fat JAR via the project's own ./mvnw wrapper.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ghcr.io/graalvm/jdk-community:25 AS builder
+
+WORKDIR /app
+
+# ── Maven wrapper (early layer → cached unless wrapper config changes) ─────────
+COPY mvnw mvnw.cmd ./
+COPY .mvn/ .mvn/
+RUN chmod +x mvnw
+
+# ── Resolve dependencies before copying source (layer cache) ──────────────────
+COPY pom.xml ./
+RUN ./mvnw dependency:go-offline -q
+
+# ── Application source ─────────────────────────────────────────────────────────
+COPY src/ src/
+
+# ── Package the fat JAR (tests skipped) ───────────────────────────────────────
+RUN ./mvnw package -DskipTests
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 – Runtime
+#   Same GraalVM 25 JDK image runs the fat JAR.
+#   (Switch to graalvm/jre-community:25 if/when an official JRE variant ships.)
+# ─────────────────────────────────────────────────────────────────────────────
+FROM ghcr.io/graalvm/jdk-community:25 AS runtime
+
+# Non-root user for security (Oracle Linux uses groupadd/useradd)
+RUN groupadd --gid 1001 appgroup && \
+    useradd  --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Upload directory used by the ingestion service
+RUN mkdir -p /data/rag-uploads \
+ && chown appuser:appgroup /data/rag-uploads \
+ && chmod 755 /data/rag-uploads
+
+WORKDIR /app
+
+# Copy only the executable fat JAR produced by Spring Boot
+COPY --from=builder /app/target/ingestion-service-*.jar app.jar
+
+USER appuser
+
+# Ingestion API port (matches server.port in application.yaml)
+EXPOSE 8081
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+

@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     trace_sample_rate: float = 1.0
 
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def uppercase_log_level(cls, v: str) -> str:
+        """Accept lowercase values from env (e.g. 'info') and normalise to uppercase."""
+        return v.upper() if isinstance(v, str) else v
+
     @field_validator("celery_accept_content", mode="before")
     @classmethod
     def parse_accept_content(cls, v: str | list[str]) -> list[str]:

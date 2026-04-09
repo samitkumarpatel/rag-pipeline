@@ -34,12 +34,11 @@ services:
   ingestion-service:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.jvm
     container_name: rag-ingestion
     ports:
       - "8081:8081"
     environment:
-      SPRING_PROFILES_ACTIVE: dev
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest

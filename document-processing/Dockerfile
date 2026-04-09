@@ -24,10 +24,8 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 
 # Install build dependencies (needed to compile some C extensions)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        libffi-dev \
-        libssl-dev \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libffi-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create isolated venv — keeps runtime image clean
@@ -36,9 +34,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy dependency spec and install — layer cached until pyproject.toml changes
 COPY pyproject.toml .
+COPY app/ ./app/
 RUN pip install --upgrade pip wheel setuptools && \
-    pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \
-    pip install --no-cache-dir -e .
+    pip install --no-cache-dir ".[dev]"
 
 # ── Stage 2: Runtime image ─────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
@@ -51,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr-eng \
         # libGL for Pillow image processing
         libglib2.0-0 \
-        libgl1-mesa-glx \
+        libgl1 \
         # Health check utility
         curl \
     && rm -rf /var/lib/apt/lists/*

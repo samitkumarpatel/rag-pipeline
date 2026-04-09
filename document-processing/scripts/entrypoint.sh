@@ -18,6 +18,8 @@
 set -euo pipefail
 
 ROLE="${1:-server}"
+LOG_LEVEL="${DOC_PROC_LOG_LEVEL:-info}"
+LOG_LEVEL="${LOG_LEVEL,,}"   # lowercase — uvicorn/celery require lowercase
 shift || true   # remaining args passed through to the process
 
 case "$ROLE" in
@@ -28,7 +30,7 @@ case "$ROLE" in
         --host "${DOC_PROC_HOST:-0.0.0.0}" \
         --port "${DOC_PROC_PORT:-8082}" \
         --workers "${DOC_PROC_WORKERS:-1}" \
-        --log-level "${DOC_PROC_LOG_LEVEL:-info}" \
+        --log-level "info" \
         --no-access-log \
         "$@"
     ;;
@@ -36,7 +38,7 @@ case "$ROLE" in
   celery-worker)
     echo "[entrypoint] Starting Celery worker"
     exec celery -A app.core.celery_app.celery_app worker \
-        --loglevel="${DOC_PROC_LOG_LEVEL:-info}" \
+        --loglevel="INFO" \
         --concurrency="${DOC_PROC_CELERY_WORKER_CONCURRENCY:-0}" \
         "$@"
     ;;
@@ -44,7 +46,7 @@ case "$ROLE" in
   celery-beat)
     echo "[entrypoint] Starting Celery beat scheduler"
     exec celery -A app.core.celery_app.celery_app beat \
-        --loglevel="${DOC_PROC_LOG_LEVEL:-info}" \
+        --loglevel="INFO" \
         "$@"
     ;;
 

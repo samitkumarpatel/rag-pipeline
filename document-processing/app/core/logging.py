@@ -26,6 +26,10 @@ def _add_service_context(
     settings = get_settings()
     event_dict["service"] = settings.service_name
     event_dict["environment"] = settings.environment
+    # Capture logger name safely — PrintLogger has no .name attribute
+    name = getattr(logger, "name", None) or event_dict.pop("_logger", None)
+    if name:
+        event_dict["logger"] = name
     return event_dict
 
 
@@ -44,7 +48,6 @@ def configure_logging() -> None:
         structlog.contextvars.merge_contextvars,
         _add_service_context,
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
     ]
