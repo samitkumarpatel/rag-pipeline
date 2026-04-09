@@ -1,3 +1,7 @@
+### Overview
+
+![Overview](./Architecture.png "Overview") 
+
 ### Tech stack breakdown
 **Ingestion Service (Java / Spring Boot)**
 This is the entry point. It accepts the zip/gz upload via a multipart REST endpoint, decompresses the archive in-memory or to temp storage, stores raw files in S3/MinIO with a UUID per job, then publishes one Kafka/RabbitMQ event per file. It never touches parsing — its only job is intake and fan-out.
