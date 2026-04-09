@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "document-processing"
+version = "0.1.0"
+description = "RAG Chatbot — Document Processing Microservice"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+    # ── Web framework ─────────────────────────────────────────────────
+    "fastapi[standard]>=0.135.1",       # 0.135.1 latest (Apr 2026)
+    "uvicorn[standard]>=0.34.0",        # ASGI server
+
+    # ── Task queue ───────────────────────────────────────────────────
+    "celery[rabbitmq]>=5.6.1",          # 5.6.1 latest (Jan 2026)
+    "kombu>=5.5.0",                     # Celery messaging library
+
+    # ── Settings / validation ─────────────────────────────────────────
+    "pydantic>=2.10.0",                 # v2 — model_config, field_validator
+    "pydantic-settings>=2.7.0",         # BaseSettings with env var support
+
+    # ── Document parsers ──────────────────────────────────────────────
+    "pymupdf>=1.25.0",                  # PDF parsing (fitz)
+    "python-docx>=1.1.2",              # DOCX parsing
+    "pytesseract>=0.3.13",             # OCR (requires Tesseract binary)
+    "Pillow>=11.1.0",                  # Image preprocessing for OCR
+
+    # ── Text chunking + embeddings ────────────────────────────────────
+    "langchain-text-splitters>=0.3.5", # RecursiveCharacterTextSplitter
+    "tiktoken>=0.9.0",                 # Token counting for chunking
+
+    # ── HTTP client (gRPC calls to Vector Store) ──────────────────────
+    "httpx>=0.28.0",                   # async HTTP client
+
+    # ── Observability ─────────────────────────────────────────────────
+    "prometheus-fastapi-instrumentator>=7.0.0",
+    "structlog>=25.1.0",               # structured JSON logging
+
+    # ── Utilities ─────────────────────────────────────────────────────
+    "tenacity>=9.0.0",                 # retry logic with backoff
+    "python-multipart>=0.0.20",        # multipart form parsing
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",                   # AsyncClient for test requests
+    "anyio>=4.8.0",
+    "factory-boy>=3.3.1",
+    "ruff>=0.9.0",                     # linting + formatting
+    "mypy>=1.14.0",
+    "pre-commit>=4.0.0",
+    "celery[pytest]>=5.6.1",           # Celery test helpers
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+# ── Ruff (replaces flake8 + isort + black) ────────────────────────────
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
+ignore = ["ANN101", "ANN102", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+# ── mypy ──────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+# ── pytest ────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"

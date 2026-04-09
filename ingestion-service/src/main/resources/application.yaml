@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: ingestion-service
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 500MB          # max single archive upload
+      max-request-size: 510MB
+      file-size-threshold: 10MB     # stream to disk above this size
+
+  # ── Jackson 3 (default in Spring Boot 4) ──────────────────────────
+  jackson:
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
+
+  # ── RabbitMQ ────────────────────────────────────────────────────────
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+#  mvc:
+#    problemdetails:
+#      enabled: true
+
+# ── Server ─────────────────────────────────────────────────────────────
+server:
+  port: 8080
+  shutdown: graceful              # Spring Boot graceful shutdown
+  servlet:
+    context-path: /
+  tomcat:
+    max-swallow-size: 600MB       # must be >= max-request-size
+
+# ── Actuator ──────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+    build:
+      enabled: true
+    java:
+      enabled: true
+
+  # ── Application-specific ───────────────────────────────────────────────
+ingestion:
+  storage:
+    # Local base directory; each job gets its own UUID subdirectory.
+    # Override with INGESTION_STORAGE_BASE_DIR env var in production.
+    base-dir: ${INGESTION_STORAGE_BASE_DIR:/tmp}
+
+  # Allowed MIME types — Tika validates actual byte signatures, not extension.
+  allowed-mime-types:
+    - application/pdf
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/msword
+    - text/plain
+    - image/jpeg
+    - image/png
+    - image/tiff
+    - image/webp
+
+  # Max size of a single extracted file (bytes) — 100 MB
+  max-extracted-file-size-bytes: 104857600
+
+  messaging:
+    exchange: rag.ingestion.exchange
+    routing-key: file.uploaded
+    queue: rag.file.processing.queue
+    dead-letter-queue: rag.file.processing.dlq

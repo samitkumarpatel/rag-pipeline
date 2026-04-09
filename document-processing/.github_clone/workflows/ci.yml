@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tesseract (required for image_parser tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint with Ruff
+        run: ruff check app/ tests/
+
+      - name: Format check with Ruff
+        run: ruff format --check app/ tests/
+
+      - name: Type check with mypy
+        run: mypy app/
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --cov=app --cov-report=xml
+        env:
+          DOC_PROC_ENVIRONMENT: development
+          DOC_PROC_OPENAI_API_KEY: test-key
+          DOC_PROC_RABBITMQ_URL: amqp://guest:guest@localhost:5672/
+          DOC_PROC_VECTOR_STORE_URL: http://localhost:8083
+          DOC_PROC_METRICS_ENABLED: "false"
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t doc-processing:ci .
+
+      - name: Test server role starts
+        run: |
+          docker run --rm \
+            -e DOC_PROC_ENVIRONMENT=production \
+            -e DOC_PROC_OPENAI_API_KEY=test \
+            -e DOC_PROC_RABBITMQ_URL=amqp://guest:guest@localhost:5672/ \
+            doc-processing:ci \
+            python -c "from app.main import app; print('import OK')"

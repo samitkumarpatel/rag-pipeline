@@ -1,0 +1,230 @@
+# =============================================================================
+# Kubernetes manifests for the Document Processing Service
+#
+# One Deployment per role — enables independent scaling per queue:
+#   kubectl scale deployment doc-proc-worker-image --replicas=5
+#
+# Apply:
+#   kubectl apply -f k8s/deployments.yaml
+# =============================================================================
+---
+# ── Namespace ──────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rag-platform
+
+---
+# ── ConfigMap ──────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doc-proc-config
+  namespace: rag-platform
+data:
+  DOC_PROC_ENVIRONMENT: "production"
+  DOC_PROC_LOG_LEVEL: "INFO"
+  DOC_PROC_HOST: "0.0.0.0"
+  DOC_PROC_PORT: "8082"
+  DOC_PROC_STORAGE_BASE_DIR: "/data/rag-uploads"
+  DOC_PROC_CHUNK_SIZE: "512"
+  DOC_PROC_CHUNK_OVERLAP: "50"
+
+---
+# ── Secret (create separately with kubectl create secret) ─────────────────────
+# kubectl create secret generic doc-proc-secrets \
+#   --from-literal=DOC_PROC_OPENAI_API_KEY=sk-... \
+#   --from-literal=DOC_PROC_RABBITMQ_URL=amqp://user:pass@rabbitmq:5672/ \
+#   -n rag-platform
+
+---
+# ── FastAPI server Deployment ─────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-proc-api
+  namespace: rag-platform
+  labels:
+    app: doc-proc-api
+    role: server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: doc-proc-api
+  template:
+    metadata:
+      labels:
+        app: doc-proc-api
+        role: server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: api
+          image: doc-processing:latest
+          command: ["server"]
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: doc-proc-config
+            - secretRef:
+                name: doc-proc-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8082
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: uploads
+              mountPath: /data/rag-uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: doc-proc-uploads-pvc
+
+---
+# ── Service for FastAPI ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: doc-proc-api
+  namespace: rag-platform
+spec:
+  selector:
+    app: doc-proc-api
+  ports:
+    - port: 8082
+      targetPort: 8082
+
+---
+# ── PDF Worker Deployment ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-proc-worker-pdf
+  namespace: rag-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: doc-proc-worker-pdf
+  template:
+    metadata:
+      labels:
+        app: doc-proc-worker-pdf
+        role: celery-worker
+        queue: pdf
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        - name: worker
+          image: doc-processing:latest
+          command: ["celery-worker", "--queues=pdf_processing", "--concurrency=2"]
+          envFrom:
+            - configMapRef:
+                name: doc-proc-config
+            - secretRef:
+                name: doc-proc-secrets
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          volumeMounts:
+            - name: uploads
+              mountPath: /data/rag-uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: doc-proc-uploads-pvc
+
+---
+# ── Image Worker Deployment (most CPU-intensive) ───────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doc-proc-worker-image
+  namespace: rag-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doc-proc-worker-image
+  template:
+    metadata:
+      labels:
+        app: doc-proc-worker-image
+        role: celery-worker
+        queue: image
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        - name: worker
+          image: doc-processing:latest
+          command: ["celery-worker", "--queues=image_processing", "--concurrency=1"]
+          envFrom:
+            - configMapRef:
+                name: doc-proc-config
+            - secretRef:
+                name: doc-proc-secrets
+          resources:
+            requests:
+              cpu: "1"
+              memory: "1Gi"
+            limits:
+              cpu: "4"
+              memory: "4Gi"
+          volumeMounts:
+            - name: uploads
+              mountPath: /data/rag-uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: doc-proc-uploads-pvc
+
+---
+# ── HorizontalPodAutoscaler for image workers ──────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: doc-proc-worker-image-hpa
+  namespace: rag-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: doc-proc-worker-image
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
