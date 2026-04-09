@@ -1,4 +1,4 @@
-###Tech stack breakdown
+### Tech stack breakdown
 **Ingestion Service (Java / Spring Boot)**
 This is the entry point. It accepts the zip/gz upload via a multipart REST endpoint, decompresses the archive in-memory or to temp storage, stores raw files in S3/MinIO with a UUID per job, then publishes one Kafka/RabbitMQ event per file. It never touches parsing — its only job is intake and fan-out.
 
@@ -11,7 +11,7 @@ A thin Java wrapper around your vector database of choice. Pinecone is the easie
 **Query / Chat Service (Java / Spring Boot)**
 This is the RAG brain. When a question arrives, it: embeds the question (calling the same embedding model), does a top-K vector search against the Vector Store Service, retrieves the top 3–5 passages with source file metadata, assembles a prompt (system instructions + context chunks + conversation history + user question), and streams the LLM response back via WebSocket or SSE. Conversation history can live in Redis per session ID.
 
-####Key design decisions
+#### Key design decisions
 
 Why Kafka over synchronous REST for ingestion? A 50-file zip should not make the user wait. Async processing means the upload returns immediately with a jobId, and the frontend polls or listens via WebSocket for completion events.
 
