@@ -57,6 +57,12 @@ case "$ROLE" in
         --broker="${DOC_PROC_RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}" \
         "$@"
     ;;
+  
+  consumer)
+    echo "[entrypoint] Starting RabbitMQ event consumer"
+    echo "[entrypoint] Listening on: ${DOC_PROC_INGESTION_QUEUE:-rag.file.processing.queue}"
+    exec python -m app.consumer.event_consumer "$@"
+    ;;
 
   *)
     echo "[entrypoint] Unknown role: $ROLE"

@@ -33,7 +33,7 @@ class ChunkingService:
     def __init__(self) -> None:
         settings = get_settings()
         self._splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-            model_name="cl100k_base",        # tiktoken encoding for GPT-4 / text-embedding-3
+            encoding_name="cl100k_base",     # tiktoken encoding for GPT-4 / text-embedding-3
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             separators=["\n\n", "\n", ". ", " ", ""],

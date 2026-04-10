@@ -17,7 +17,7 @@ This is the RAG brain. When a question arrives, it: embeds the question (calling
 
 #### Key design decisions
 
-Why Kafka over synchronous REST for ingestion? A 50-file zip should not make the user wait. Async processing means the upload returns immediately with a jobId, and the frontend polls or listens via WebSocket for completion events.
+Why Message Bus(Kafka, RabbitMq) over synchronous REST for ingestion? A 50-file zip should not make the user wait. Async processing means the upload returns immediately with a jobId, and the frontend polls or listens via WebSocket for completion events.
 
 Chunking strategy matters a lot. Overlapping chunks (50–100 token overlap) prevent answers from being cut off at chunk boundaries. Metadata stored alongside each chunk (source filename, page number) lets you surface citations in the answer.
 

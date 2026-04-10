@@ -74,7 +74,43 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     openai_api_key: str = Field(default="", description="OpenAI API key for embeddings")
     embedding_batch_size: int = 100
+    # ── Embedding provider ────────────────────────────────────────────
+    embedding_provider: Literal["openai", "azure_openai", "azure_foundry"] = "openai"
 
+    # OpenAI
+    openai_api_key: str = Field(default="", description="OpenAI API key")
+
+    # Azure OpenAI
+    azure_openai_api_key: str = Field(default="", description="Azure OpenAI key")
+    azure_openai_endpoint: str = Field(default="", description="e.g. https://my-resource.openai.azure.com")
+    azure_openai_deployment: str = Field(default="", description="Deployment name in Azure")
+    azure_openai_api_version: str = "2024-02-01"
+
+    # Azure AI Foundry
+    azure_foundry_endpoint: str = Field(default="", description="e.g. https://my-project.inference.ai.azure.com")
+    azure_foundry_api_key: str = Field(default="", description="Azure AI Foundry key")
+
+
+
+    # Ingestion Service queue bindings (consumer reads these)
+    # These MUST match ingestion.messaging.* in the Ingestion Service application.yml
+    ingestion_exchange: str = Field(
+        default="rag.ingestion.exchange",
+        description="Exchange the Ingestion Service publishes to",
+    )
+    ingestion_routing_key: str = Field(
+        default="file.uploaded",
+        description="Routing key used by the Ingestion Service",
+    )
+    ingestion_queue: str = Field(
+        default="rag.file.processing.queue",
+        description="Queue this service consumes from",
+    )
+    ingestion_dlq: str = Field(
+        default="rag.file.processing.dlq",
+        description="Dead-letter queue for failed messages",
+    )
+    
     # ── Vector Store Service ──────────────────────────────────────────
     vector_store_url: str = Field(
         default="http://vector-store-service:8083",

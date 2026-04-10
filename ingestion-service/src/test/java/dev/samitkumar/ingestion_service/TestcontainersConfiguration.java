@@ -15,9 +15,10 @@ class TestcontainersConfiguration {
 		var rabbitMqContainer = new RabbitMQContainer(DockerImageName.parse("rabbitmq:4-management-alpine"));
 		rabbitMqContainer.withExposedPorts(5672, 15672);
 		rabbitMqContainer.start();
-		System.out.println("=================================================");
-		System.out.println("RabbitMQ Management UI: http://localhost:" + rabbitMqContainer.getMappedPort(15672));
-		System.out.println("=================================================");
+		IO.println("=================================================");
+		IO.println("RabbitMQ Management UI: http://localhost:" + rabbitMqContainer.getMappedPort(15672));
+		IO.println("RabbitMQ amqp URI: http://localhost:" + rabbitMqContainer.getMappedPort(5672));
+		IO.println("=================================================");
 		return rabbitMqContainer;
 
 	}

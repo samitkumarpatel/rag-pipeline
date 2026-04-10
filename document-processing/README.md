@@ -90,6 +90,9 @@ celery -A app.core.celery_app.celery_app worker \
 # Terminal 3 — Image OCR worker (separate for CPU isolation)
 celery -A app.core.celery_app.celery_app worker \
   --queues=image_processing --concurrency=1 --loglevel=info
+
+# Terminal 4 - run the consumer
+.venv/bin/python -m app.consumer.event_consumer
 ```
 
 ---

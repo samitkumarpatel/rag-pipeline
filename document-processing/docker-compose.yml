@@ -64,7 +64,23 @@ services:
       start_period: 20s
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-
+  
+  # ── RabbitMQ event consumer ─────────────────────────────────────────
+  # Reads FileUploadedEvents from rag.file.processing.queue (published by
+  # the Ingestion Service) and dispatches them into the Celery task queues.
+  # THIS IS THE REAL CONNECTION between Ingestion and Document Processing.
+  consumer:
+    <<: *worker-base
+    container_name: doc-proc-consumer
+    command: consumer
+    environment:
+      <<: *common-env
+      # Must match Ingestion Service application.yml ingestion.messaging.*
+      DOC_PROC_INGESTION_EXCHANGE: rag.ingestion.exchange
+      DOC_PROC_INGESTION_ROUTING_KEY: file.uploaded
+      DOC_PROC_INGESTION_QUEUE: rag.file.processing.queue
+      DOC_PROC_INGESTION_DLQ: rag.file.processing.dlq
+  
   # ── FastAPI server ──────────────────────────────────────────────────
   api:
     <<: *worker-base

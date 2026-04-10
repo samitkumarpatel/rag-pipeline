@@ -23,7 +23,7 @@ from app.core.celery_app import celery_app
 from app.models.domain import DocumentType, ProcessingResult, ProcessingStatus
 from app.parsers.pdf_parser import PdfParser
 from app.services.chunking_service import ChunkingService
-from app.services.embedding_service import EmbeddingService
+from app.services.embedding_generic_service import EmbeddingService
 from app.services.vector_store_client import VectorStoreClient
 from app.tasks.base_task import ProcessingTask
 
