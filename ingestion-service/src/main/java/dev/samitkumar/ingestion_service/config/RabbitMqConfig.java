@@ -76,8 +76,7 @@ public class RabbitMqConfig {
     // ── RabbitTemplate ────────────────────────────────────────────────
 
     @Bean
-    RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory,
-                                  MessageConverter messageConverter) {
+    RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory, MessageConverter messageConverter) {
         var template = new RabbitTemplate(connectionFactory);
         template.setMessageConverter(messageConverter);
         template.setExchange(props.messaging().exchange());

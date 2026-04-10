@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: document-processing-v2
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ragdb}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASS:postgres}
+
+server:
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+
+# ── Actuator ─────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+doc-processing:
+  # RabbitMQ topology — MUST match Ingestion Service application.yml exactly
+  messaging:
+    exchange: ${INGESTION_EXCHANGE:rag.ingestion.exchange}
+    routing-key: ${INGESTION_ROUTING_KEY:file.uploaded}
+    queue: ${INGESTION_QUEUE:rag.file.processing.queue}
+    dead-letter-queue: ${INGESTION_DLQ:rag.file.processing.dlq}
+
+  # TokenTextSplitter config (mirrors Python ChunkingService)
+  chunking:
+    chunk-size: ${CHUNK_SIZE:512}
+    chunk-overlap: ${CHUNK_OVERLAP:50}
+    min-chunk-size: ${MIN_CHUNK_SIZE:50}
+
+  # File storage base dir (shared with Ingestion Service)
+  storage:
+    base-dir: ${STORAGE_BASE_DIR:/data/rag-uploads}
+
+  # Supported MIME types (mirrors Ingestion Service allowed-mime-types)
+  supported-mime-types:
+    - application/pdf
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/msword
+    - text/plain
+    - image/jpeg
+    - image/png
+    - image/tiff
+    - image/webp
