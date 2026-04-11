@@ -14,7 +14,9 @@ spring:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ragdb}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASS:postgres}
-
+  threads:
+    virtual:
+      enabled: true
 server:
   port: ${SERVER_PORT:8082}
   shutdown: graceful

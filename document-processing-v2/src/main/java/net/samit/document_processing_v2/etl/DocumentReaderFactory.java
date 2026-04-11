@@ -60,8 +60,6 @@ public class DocumentReaderFactory {
     }
 
     public boolean supports(@NonNull String mimeType) {
-        return PDF_TYPES.contains(mimeType)
-                || TIKA_TYPES.contains(mimeType)
-                || TEXT_TYPES.contains(mimeType);
+        return PDF_TYPES.contains(mimeType) || TIKA_TYPES.contains(mimeType) || TEXT_TYPES.contains(mimeType);
     }
 }

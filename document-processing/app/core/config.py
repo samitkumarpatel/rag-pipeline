@@ -65,17 +65,18 @@ class Settings(BaseSettings):
     # Retry policy
     celery_task_max_retries: int = 3
     celery_task_default_retry_delay: int = 60  # seconds
+    celery_result_expires: int = 3600  # seconds — results TTL in the backend
 
     # ── Chunking ──────────────────────────────────────────────────────
     chunk_size: int = 512
     chunk_overlap: int = 50
 
     # ── Embedding ─────────────────────────────────────────────────────
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = "nomic-embed-text"
     openai_api_key: str = Field(default="", description="OpenAI API key for embeddings")
     embedding_batch_size: int = 100
     # ── Embedding provider ────────────────────────────────────────────
-    embedding_provider: Literal["openai", "azure_openai", "azure_foundry"] = "openai"
+    embedding_provider: Literal["openai", "azure_openai", "azure_foundry", "ollama"] = "ollama"
 
     # OpenAI
     openai_api_key: str = Field(default="", description="OpenAI API key")
@@ -89,6 +90,9 @@ class Settings(BaseSettings):
     # Azure AI Foundry
     azure_foundry_endpoint: str = Field(default="", description="e.g. https://my-project.inference.ai.azure.com")
     azure_foundry_api_key: str = Field(default="", description="Azure AI Foundry key")
+
+    # Ollama
+    ollama_base_url: str = Field(default="http://localhost:11434", description="Ollama server base URL")
 
 
 

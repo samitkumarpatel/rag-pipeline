@@ -12,36 +12,38 @@ license = { text = "MIT" }
 
 dependencies = [
     # ── Web framework ─────────────────────────────────────────────────
-    "fastapi[standard]>=0.135.1",       # 0.135.1 latest (Apr 2026)
-    "uvicorn[standard]>=0.34.0",        # ASGI server
+    "fastapi[standard]>=0.135.3",       # 0.135.3 latest (Apr 2026)
+    "uvicorn[standard]>=0.44.0",        # ASGI server
 
     # ── Task queue ───────────────────────────────────────────────────
-    "celery[rabbitmq]>=5.6.1",          # 5.6.1 latest (Jan 2026)
-    "kombu>=5.5.0",                     # Celery messaging library
+    "celery[rabbitmq]>=5.6.3",          # 5.6.3 latest (Mar 2026) — critical memory-leak + security fixes
+    "kombu>=5.6.2",                     # Celery messaging library — track celery 5.6.x
 
     # ── Settings / validation ─────────────────────────────────────────
-    "pydantic>=2.10.0",                 # v2 — model_config, field_validator
+    "pydantic>=2.12.5",                 # v2 — model_config, field_validator
     "pydantic-settings>=2.7.0",         # BaseSettings with env var support
 
     # ── Document parsers ──────────────────────────────────────────────
-    "pymupdf>=1.25.0",                  # PDF parsing (fitz)
+    "pymupdf>=1.27.0",                  # PDF parsing (fitz)
     "python-docx>=1.1.2",              # DOCX parsing
     "pytesseract>=0.3.13",             # OCR (requires Tesseract binary)
     "Pillow>=11.1.0",                  # Image preprocessing for OCR
 
     # ── Text chunking + embeddings ────────────────────────────────────
-    "langchain-text-splitters>=0.3.5", # RecursiveCharacterTextSplitter
+    # NOTE: 1.x is a major bump from 0.3.x — RecursiveCharacterTextSplitter
+    # class name is unchanged but verify imports if chunking_service.py breaks.
+    "langchain-text-splitters>=1.1.1", # RecursiveCharacterTextSplitter
     "tiktoken>=0.9.0",                 # Token counting for chunking
 
-    # ── HTTP client (gRPC calls to Vector Store) ──────────────────────
-    "httpx>=0.28.0",                   # async HTTP client
+    # ── HTTP client ───────────────────────────────────────────────────
+    "httpx>=0.28.1",                   # async + sync HTTP client
 
     # ── Observability ─────────────────────────────────────────────────
     "prometheus-fastapi-instrumentator>=7.0.0",
     "structlog>=25.1.0",               # structured JSON logging
 
     # ── Utilities ─────────────────────────────────────────────────────
-    "tenacity>=9.0.0",                 # retry logic with backoff
+    "tenacity>=9.1.4",                 # retry logic with backoff
     "python-multipart>=0.0.20",        # multipart form parsing
 ]
 
@@ -56,7 +58,7 @@ dev = [
     "ruff>=0.9.0",                     # linting + formatting
     "mypy>=1.14.0",
     "pre-commit>=4.0.0",
-    "celery[pytest]>=5.6.1",           # Celery test helpers
+    "celery[pytest]>=5.6.3",           # Celery test helpers
     "flower>=2.0.0",                    # Celery web monitoring UI
 ]
 

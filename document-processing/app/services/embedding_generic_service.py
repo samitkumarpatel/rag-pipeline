@@ -60,6 +60,11 @@ class EmbeddingService:
             }
             body = {"input": texts}
 
+        elif settings.embedding_provider == "ollama":
+            url = f"{settings.ollama_base_url}/v1/embeddings"
+            headers = {"Content-Type": "application/json"}
+            body = {"input": texts, "model": settings.embedding_model}
+
         else:  # openai (default)
             url = "https://api.openai.com/v1/embeddings"
             headers = {

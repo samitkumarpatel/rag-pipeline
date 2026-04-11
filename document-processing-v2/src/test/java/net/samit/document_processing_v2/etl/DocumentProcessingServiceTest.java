@@ -37,8 +37,10 @@ class DocumentProcessingServiceTest {
     void setUp() {
         var props = new DocProcessingProperties(
                 new DocProcessingProperties.Messaging(
-                        "rag.ingestion.exchange", "file.uploaded",
-                        "rag.file.processing.queue", "rag.file.processing.dlq"),
+                        "rag.ingestion.exchange",
+                        "file.uploaded",
+                        "rag.file.processing.queue",
+                        "rag.file.processing.dlq"),
                 new DocProcessingProperties.Chunking(512, 50, 50),
                 new DocProcessingProperties.Storage(tempDir.toString()),
                 List.of("application/pdf", "text/plain")

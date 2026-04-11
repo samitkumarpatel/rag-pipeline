@@ -23,6 +23,7 @@ public class DocumentProcessingService {
     private static final Logger log = LoggerFactory.getLogger(DocumentProcessingService.class);
 
     private final DocumentReaderFactory readerFactory;
+    //TODO: Implement Vector store and read in separate service
     private final VectorStore vectorStore;
     private final DocProcessingProperties props;
 
@@ -83,6 +84,7 @@ public class DocumentProcessingService {
             //   1. Calls EmbeddingModel.embed(chunks) → float[] per chunk
             //   2. Upserts (text + vector + metadata) to PGVector
             // This replaces EmbeddingService + VectorStoreClient in Python.
+            //TODO: Implement Vector store and read in separate service
             vectorStore.write(chunks);
 
             long durationMs = System.currentTimeMillis() - start;
@@ -90,16 +92,13 @@ public class DocumentProcessingService {
                     event.fileId(), chunks.size(), durationMs);
 
             return CompletableFuture.completedFuture(
-                    ProcessingResult.success(event.fileId(), event.jobId(),
-                            event.mimeType(), chunks.size(), durationMs));
+                    ProcessingResult.success(event.fileId(), event.jobId(), event.mimeType(), chunks.size(), durationMs));
 
         } catch (Exception ex) {
             long durationMs = System.currentTimeMillis() - start;
-            log.error("Failed to process file={} mimeType={}: {}",
-                    event.fileId(), event.mimeType(), ex.getMessage(), ex);
+            log.error("Failed to process file={} mimeType={}: {}", event.fileId(), event.mimeType(), ex.getMessage(), ex);
             return CompletableFuture.completedFuture(
-                    ProcessingResult.failure(event.fileId(), event.jobId(),
-                            event.mimeType(), durationMs, ex));
+                    ProcessingResult.failure(event.fileId(), event.jobId(), event.mimeType(), durationMs, ex));
         }
     }
 }
