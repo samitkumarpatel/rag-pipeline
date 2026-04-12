@@ -1,0 +1,158 @@
+spring:
+  application:
+    name: rag-pipeline-modulith
+
+  # ── Multipart upload ──────────────────────────────────────────────────────
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 500MB
+      max-request-size: 510MB
+      file-size-threshold: 10MB
+
+  # ── Jackson 3 (Spring Boot 4 default) ────────────────────────────────────
+  jackson:
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
+
+  # ── RabbitMQ — used for @Externalized event publication via outbox pattern ─
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASS:guest}
+    virtual-host: /
+
+  # ── PostgreSQL — shared by the event publication registry and PGVector ────
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ragdb}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASS:postgres}
+
+  sql:
+    init:
+      # schema.sql runs before Hibernate ddl-auto, pre-creating event_publication
+      # with TEXT columns to avoid the default VARCHAR(255) truncation error.
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+  jpa:
+    hibernate:
+      # none: Spring Boot's spring.sql.init owns the schema, so Hibernate must not
+      # auto-generate DDL. This prevents event_publication from being created with
+      # the default VARCHAR(255) columns (too short for serialized JSON payloads).
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+
+  # ── Virtual threads (Spring Boot 4) ───────────────────────────────────────
+  threads:
+    virtual:
+      enabled: true
+
+  # ── Spring AI ─────────────────────────────────────────────────────────────
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      embedding:
+        model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 768
+        initialize-schema: true
+
+# ── Server ─────────────────────────────────────────────────────────────────
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    max-swallow-size: 600MB
+
+# ── Spring Modulith ────────────────────────────────────────────────────────
+spring.modulith:
+  # Event publication registry settings
+  events:
+    # DELETE: removes completed publications instead of just marking them done.
+    # Use ARCHIVE for audit trail requirements.
+    completion-mode: DELETE
+
+    # Staleness detection — marks stuck publications as FAILED for resubmission.
+    # Adjust to match your expected processing times.
+    staleness:
+      published: 30m    # PUBLISHED for > 30 min → FAILED (listener never started)
+      processing: 10m   # PROCESSING for > 10 min → FAILED (listener crashed mid-flight)
+      resubmitted: 20m  # RESUBMITTED for > 20 min → FAILED (retry also stuck)
+
+    # Serialize AMQP externalization to prevent race conditions during resubmission
+    externalization:
+      serialize-externalization: true
+
+# ── Actuator ──────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        # 'modulith' endpoint from spring-modulith-starter-insight — exposes the
+        # module dependency graph as JSON at /actuator/modulith
+        include: health, info, metrics, prometheus, modulith
+  endpoint:
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+    build:
+      enabled: true
+    java:
+      enabled: true
+
+# ── Ingestion module configuration ────────────────────────────────────────
+ingestion:
+  storage:
+    base-dir: ${INGESTION_STORAGE_BASE_DIR:/tmp/rag-uploads}
+
+  allowed-mime-types:
+    - application/pdf
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/msword
+    - text/plain
+    - image/jpeg
+    - image/png
+    - image/tiff
+    - image/webp
+
+  max-extracted-file-size-bytes: 104857600  # 100 MB
+
+  messaging:
+    exchange: rag.ingestion.exchange
+    routing-key: file.uploaded
+    queue: rag.file.processing.queue
+    dead-letter-queue: rag.file.processing.dlq
+
+# ── Processing module configuration ───────────────────────────────────────
+doc-processing:
+  chunking:
+    chunk-size: ${CHUNK_SIZE:512}
+    chunk-overlap: ${CHUNK_OVERLAP:50}
+    min-chunk-size: ${MIN_CHUNK_SIZE:50}
+
+  storage:
+    base-dir: ${STORAGE_BASE_DIR:/tmp/rag-uploads}
+
+  supported-mime-types:
+    - application/pdf
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/msword
+    - text/plain
+    - image/jpeg
+    - image/png
+    - image/tiff
+    - image/webp

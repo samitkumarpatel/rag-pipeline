@@ -1,0 +1,116 @@
+##
+## RAG Pipeline — Spring Modulith
+##
+## Services:
+##   rabbitmq       — message broker for @Externalized event publication (outbox pattern)
+##   postgres       — JPA event publication registry + PGVector store
+##   ollama         — local LLM / embedding model server
+##   rag-modulith   — the unified Spring Modulith application
+##
+## Quick start:
+##   docker compose up -d rabbitmq postgres ollama
+##   # Pull the embedding model once:
+##   docker compose exec ollama ollama pull nomic-embed-text
+##   docker compose up -d rag-modulith
+
+services:
+
+  # ── RabbitMQ ─────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rag-rabbitmq
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI (guest/guest)
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── PostgreSQL + pgvector ─────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: rag-postgres
+    environment:
+      POSTGRES_DB: ragdb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASS:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ragdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Ollama — embedding + optional LLM ────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # ── RAG Pipeline (Spring Modulith) ───────────────────────────────────────
+  rag-modulith:
+    build:
+      context: .
+      dockerfile: Dockerfile.jvm
+    container_name: rag-modulith
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+
+      # PostgreSQL — event publication registry + PGVector
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/ragdb
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASS: ${POSTGRES_PASS:-postgres}
+
+      # RabbitMQ — @Externalized event outbox
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
+
+      # Ollama — embedding model
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text
+
+      # Ingestion — shared upload directory
+      INGESTION_STORAGE_BASE_DIR: /data/rag-uploads
+      STORAGE_BASE_DIR: /data/rag-uploads
+
+      # Document chunking (optional overrides)
+      CHUNK_SIZE: 512
+      CHUNK_OVERLAP: 50
+      MIN_CHUNK_SIZE: 50
+    volumes:
+      - upload_data:/data/rag-uploads
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
+  ollama_data:
+  upload_data:

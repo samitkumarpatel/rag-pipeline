@@ -1,0 +1,33 @@
+# ── Stage 1: Build ────────────────────────────────────────────────────────
+FROM ghcr.io/graalvm/jdk-community:25 AS builder
+
+WORKDIR /build
+
+# Cache Maven dependencies before copying sources
+COPY pom.xml .
+RUN mvn --no-transfer-progress dependency:go-offline -q || true
+
+COPY src ./src
+RUN mvn --no-transfer-progress -q package -DskipTests
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────────
+FROM ghcr.io/graalvm/jdk-community:25
+
+# Non-root user for security
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+
+WORKDIR /app
+
+# Shared upload volume mount point — must match ingestion.storage.base-dir
+RUN mkdir -p /data/rag-uploads && chown appuser:appgroup /data/rag-uploads
+
+COPY --from=builder /build/target/*.jar app.jar
+RUN chown appuser:appgroup app.jar
+
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["java", \
+  "-Djava.security.egd=file:/dev/./urandom", \
+  "-jar", "app.jar"]
