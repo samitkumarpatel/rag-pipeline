@@ -1,6 +1,7 @@
 package dev.samitkumar.ragpipeline.ingestion.internal;
 
 import dev.samitkumar.ragpipeline.ingestion.FileUploadedEvent;
+import dev.samitkumar.ragpipeline.ingestion.JobCreatedEvent;
 import dev.samitkumar.ragpipeline.ingestion.UploadJob;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
@@ -71,6 +72,7 @@ public class IngestionService {
 
             // Publish domain events — Spring Modulith records each in the event publication
             // registry within this transaction. Listeners fire after commit.
+            eventPublisher.publishEvent(JobCreatedEvent.of(job.jobId(), originalFilename, entries.size()));
             entries.forEach(entry -> eventPublisher.publishEvent(FileUploadedEvent.of(job.jobId(), entry)));
 
             List<UploadJob.FileEntry> queued = entries.stream()

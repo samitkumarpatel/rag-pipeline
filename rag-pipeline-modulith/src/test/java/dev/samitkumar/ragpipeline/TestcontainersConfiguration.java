@@ -1,5 +1,6 @@
 package dev.samitkumar.ragpipeline;
 
+import lombok.SneakyThrows;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
@@ -39,7 +40,12 @@ public class TestcontainersConfiguration {
     // Pull the model after the container starts: docker exec <id> ollama pull nomic-embed-text
     @Bean
     @ServiceConnection
+    @SneakyThrows
     OllamaContainer ollamaContainer() {
-        return new OllamaContainer(DockerImageName.parse("ollama/ollama:latest"));
+        var ollama = new OllamaContainer(DockerImageName.parse("ollama/ollama:latest"));
+        ollama.start();
+        ollama.execInContainer("ollama", "pull", "nomic-embed-text");
+
+        return ollama;
     }
 }

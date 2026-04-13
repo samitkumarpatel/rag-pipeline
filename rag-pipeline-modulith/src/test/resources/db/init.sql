@@ -24,3 +24,31 @@ CREATE TABLE IF NOT EXISTS event_publication (
 ALTER TABLE event_publication ALTER COLUMN serialized_event TYPE TEXT;
 ALTER TABLE event_publication ALTER COLUMN event_type        TYPE TEXT;
 ALTER TABLE event_publication ALTER COLUMN listener_id       TYPE TEXT;
+
+-- ── Pipeline tracking tables (tracking module) ────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS pipeline_job (
+    job_id            UUID        NOT NULL PRIMARY KEY,
+    original_filename TEXT        NOT NULL,
+    status            VARCHAR(20) NOT NULL DEFAULT 'IN_PROGRESS',
+    total_files       INT         NOT NULL DEFAULT 0,
+    completed_files   INT         NOT NULL DEFAULT 0,
+    failed_files      INT         NOT NULL DEFAULT 0,
+    skipped_files     INT         NOT NULL DEFAULT 0,
+    created_at        TIMESTAMP WITH TIME ZONE NOT NULL,
+    updated_at        TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_file (
+    file_id        UUID        NOT NULL PRIMARY KEY,
+    job_id         UUID        NOT NULL,
+    original_path  TEXT        NOT NULL,
+    mime_type      TEXT        NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    chunks_created INT         NOT NULL DEFAULT 0,
+    duration_ms    BIGINT      NOT NULL DEFAULT 0,
+    error_message  TEXT,
+    queued_at      TIMESTAMP WITH TIME ZONE NOT NULL,
+    processed_at   TIMESTAMP WITH TIME ZONE
+);
+

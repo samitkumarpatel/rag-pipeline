@@ -65,13 +65,15 @@ class IngestionController {
 
         UploadJob job = ingestionService.ingest(file);
 
-        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
-                .replacePath("/api/v1/ingestion/jobs/{jobId}")
+        // UploadJob is in-memory only — no ingestion persistence endpoint exists.
+        // Direct the client to the tracking module which is the source of truth for status.
+        URI statusLocation = ServletUriComponentsBuilder.fromCurrentRequest()
+                .replacePath("/api/v1/pipeline/jobs/{jobId}")
                 .buildAndExpand(job.jobId())
                 .toUri();
 
         return ResponseEntity.accepted()
-                .location(location)
+                .location(statusLocation)
                 .body(UploadJobResponse.from(job));
     }
 
