@@ -41,6 +41,11 @@ status tracking served as a REST API.
 │         └────────────────────────────────────────▶ │   tracking   │  │
 │                         events                    │   (module)   │  │
 │                                                   └──────────────┘  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐     │
+│  │  chat  (module) — standalone, reads VectorStore directly    │     │
+│  │  ChatClient + MessageChatMemoryAdvisor + VectorStore RAG    │     │
+│  └─────────────────────────────────────────────────────────────┘     │
 └──────────────────────────────────────────────────────────────────────┘
           │                          │
           ▼                          ▼
@@ -105,6 +110,20 @@ dev.samitkumar.ragpipeline
         ├── PipelineFileRecord.java        @Entity → pipeline_file
         ├── PipelineJobRepository.java     Spring Data JPA
         └── PipelineFileRepository.java    Spring Data JPA
+
+└── chat/                                ◀ Module: chat  (standalone)
+    ├── package-info.java                  @ApplicationModule (no cross-module deps)
+    └── internal/
+        ├── ChatConfig.java                @Configuration — ChatClient bean + ChatMemory (MessageWindowChatMemory)
+        ├── ChatService.java               ask() blocking · stream() SSE · buildRagContext() · getConversationHistory()
+        ├── ChatController.java            POST /api/v1/chat · GET|DELETE /api/v1/conversations[/{id}]
+        ├── ChatProperties.java            @ConfigurationProperties(prefix="chat")
+        ├── JpaChatMemoryRepository.java   ChatMemoryRepository → PostgreSQL (chat_message table)
+        ├── ChatMessageRecord.java         @Entity → chat_message
+        └── ChatMessageJpaRepository.java  Spring Data JPA — findByConversationId, deleteByConversationId
+
+src/main/resources/
+    └── prompts/rag-system.st              ST4 system prompt template (RAG instructions + {context})
 ```
 
 ---
@@ -358,6 +377,15 @@ pipeline_file (
 vector_store (
   id, content, metadata, embedding vector(768)
 )
+
+-- Chat module — conversation history (JpaChatMemoryRepository)
+chat_message (
+  id PK, conversation_id,
+  message_type,         -- USER | ASSISTANT | SYSTEM
+  content TEXT,
+  created_at
+)
+-- index: idx_chat_message_conv_created (conversation_id, created_at)
 ```
 
 > **File bytes are never stored in the database.**  
@@ -478,6 +506,116 @@ vector_store (
 
 ---
 
+### Chat (RAG + Conversation Memory)
+
+| Method | Path | Accept | Description |
+|--------|------|--------|-------------|
+| `POST` | `/api/v1/chat` | `application/json` | Ask a question — returns full answer once LLM finishes |
+| `POST` | `/api/v1/chat` | `text/event-stream` | Ask a question — streams tokens as SSE; `conversationId` in `X-Conversation-Id` header |
+| `GET` | `/api/v1/conversations` | — | List all conversation IDs |
+| `GET` | `/api/v1/conversations/{conversationId}` | — | Full message history for a conversation |
+| `DELETE` | `/api/v1/conversations/{conversationId}` | — | Clear / delete a conversation |
+
+**Request body** (`POST /api/v1/chat`):
+
+```json
+{
+  "conversationId": "optional-uuid",
+  "question": "What are the main topics of the uploaded documents?"
+}
+```
+
+> `conversationId` is **optional** on the first call — a new UUID is generated automatically.  
+> Pass the returned ID on follow-up questions to maintain conversation context.
+
+**Response** (`application/json`):
+
+```json
+{
+  "conversationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "answer": "The documents cover …"
+}
+```
+
+**Typical flow:**
+
+```bash
+# 1. First question — no conversationId needed, one is generated
+http POST :8080/api/v1/chat \
+  question='What is the main topic of the uploaded documents?'
+
+# Response includes the conversationId — capture it for follow-ups
+# {
+#   "conversationId": "3fa85f64-…",
+#   "answer": "…"
+# }
+CONV=3fa85f64-…
+
+# 2. Follow-up — pass the same conversationId to keep context
+http POST :8080/api/v1/chat \
+  conversationId=$CONV \
+  question='Can you summarise it in bullet points?'
+
+# 3. Streaming response (tokens arrive as they are generated)
+http --stream POST :8080/api/v1/chat \
+  Accept:text/event-stream \
+  conversationId=$CONV \
+  question='Give me three key takeaways.'
+# X-Conversation-Id response header carries the conversationId
+
+# 4. View full conversation history
+http GET :8080/api/v1/conversations/$CONV
+
+# 5. List all conversations
+http GET :8080/api/v1/conversations
+
+# 6. Delete a conversation
+http DELETE :8080/api/v1/conversations/$CONV
+```
+
+**Conversation history response** (`GET /api/v1/conversations/{conversationId}`):
+
+```json
+{
+  "conversationId": "3fa85f64-…",
+  "messages": [
+    { "role": "user",      "content": "What is the main topic …" },
+    { "role": "assistant", "content": "The documents cover …" },
+    { "role": "user",      "content": "Give me three key takeaways." },
+    { "role": "assistant", "content": "1. … 2. … 3. …" }
+  ]
+}
+```
+
+**How RAG works inside each request:**
+
+```
+User message arrives
+  │
+  ▼
+buildRagContext(userMessage)
+  └─ VectorStore.similaritySearch(query, topK=5, threshold=0.5)
+       returns up to 5 nearest chunks from PGVector (HNSW / COSINE)
+       gracefully returns "No relevant documents" if store is empty or unreachable
+  │
+  ▼
+ChatClient.prompt()
+  .system( rag-system.st template + {context} )   ← grounding prompt
+  .user( userMessage )                             ← question
+  .advisors( MessageChatMemoryAdvisor(convId) )    ← inject + save conversation history
+  │
+  ├─ .call().content()         ← JSON path (fully synchronous, no Reactor)
+  └─ .stream().content()       ← SSE path  (Flux<String> token stream)
+```
+
+**Context memory:**
+- Conversation history is persisted to PostgreSQL (`chat_message` table) via `JpaChatMemoryRepository`
+- `MessageWindowChatMemory` keeps the last `chat.max-history` (default 20) messages per conversation
+- The `MessageChatMemoryAdvisor` **prepends** prior messages before each user turn so the LLM always has full context
+- History survives application restarts
+
+---
+
 ### Actuator
 
 | Endpoint | Description |
@@ -506,6 +644,12 @@ vector_store (
 | `spring.ai.ollama.embedding.model` | `nomic-embed-text` | Embedding model (768-dim) |
 | `spring.modulith.events.staleness.published` | `30m` | Retry threshold for stuck PUBLISHED events |
 | `spring.modulith.events.staleness.processing` | `10m` | Retry threshold for stuck PROCESSING events |
+| `spring.ai.ollama.chat.model` | `llama3.2` | Ollama chat model name |
+| `spring.ai.ollama.chat.options.temperature` | `0.7` | LLM sampling temperature |
+| `spring.ai.ollama.chat.options.num-ctx` | `4096` | Context window size (tokens) |
+| `chat.top-k` | `5` | Max vector store chunks retrieved per query |
+| `chat.similarity-threshold` | `0.5` | Minimum cosine similarity for retrieved chunks |
+| `chat.max-history` | `20` | Max messages kept in conversation window |
 
 **Environment variable overrides:**
 
@@ -517,6 +661,8 @@ RABBITMQ_HOST=rabbitmq
 RABBITMQ_USER=guest
 RABBITMQ_PASS=guest
 OLLAMA_BASE_URL=http://ollama:11434
+OLLAMA_CHAT_MODEL=llama3.2
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 INGESTION_STORAGE_BASE_DIR=/data/uploads
 SERVER_PORT=8080
 ```
@@ -561,7 +707,16 @@ curl -s http://localhost:8080/api/v1/pipeline/jobs/<jobId> | jq .
 # 3. List all jobs
 curl -s http://localhost:8080/api/v1/pipeline/jobs | jq .
 
-# 4. Check module graph
+# 4. Chat — non-streaming (Answer returned once LLM finishes)
+http POST :8080/api/v1/chat \
+  question='What are the main topics of the uploaded documents?'
+
+# 5. Chat — streaming SSE (tokens pushed as the LLM generates)
+http --stream POST :8080/api/v1/chat \
+  Accept:text/event-stream \
+  question='Summarise in three bullet points.'
+
+# 6. Check module graph
 curl -s http://localhost:8080/actuator/modulith | jq .
 ```
 
@@ -586,6 +741,7 @@ Tests use [Testcontainers](https://testcontainers.com/) — Docker must be runni
 
 | Test class | What it tests |
 |-----------|---------------|
+| `ChatModuleTests` | `JpaChatMemoryRepository` save/find/clear against real PostgreSQL; `ChatService.listConversations()` |
 | `IngestionModuleTests` | `IngestionService` publishes correct events on upload |
 | `ProcessingModuleTests` | `FileEventHandler` reacts to `FileUploadedEvent` |
 | `TrackingModuleTests` | All 3 event listeners persist correct DB state |
@@ -602,13 +758,16 @@ src/
 │   │   ├── RagPipelineApplication.java
 │   │   ├── ingestion/          ← public API + internal implementation
 │   │   ├── processing/         ← public API + internal implementation
-│   │   └── tracking/           ← status tracking + REST API
+│   │   ├── tracking/           ← status tracking + REST API
+│   │   └── chat/               ← RAG Q&A + conversation memory
 │   └── resources/
 │       ├── application.yaml
-│       └── db/schema.sql       ← event_publication + pipeline_job + pipeline_file DDL
+│       ├── prompts/rag-system.st            ← ST4 system prompt (RAG instructions + {context})
+│       └── db/schema.sql                   ← event_publication + pipeline_job + pipeline_file + chat_message DDL
 └── test/
     ├── java/dev/samitkumar/ragpipeline/
     │   ├── ModularityTests.java
+    │   ├── chat/internal/ChatModuleTests.java
     │   ├── ingestion/IngestionModuleTests.java
     │   ├── processing/ProcessingModuleTests.java
     │   └── tracking/internal/TrackingModuleTests.java

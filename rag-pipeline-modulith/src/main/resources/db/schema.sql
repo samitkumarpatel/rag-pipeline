@@ -48,3 +48,17 @@ CREATE TABLE IF NOT EXISTS pipeline_file (
     processed_at   TIMESTAMP WITH TIME ZONE
 );
 
+-- ── Chat memory table (chat module) ──────────────────────────────────────────
+
+-- Persists conversation history used by MessageWindowChatMemory / JpaChatMemoryRepository.
+CREATE TABLE IF NOT EXISTS chat_message (
+    id              UUID                     NOT NULL PRIMARY KEY,
+    conversation_id TEXT                     NOT NULL,
+    message_type    VARCHAR(20)              NOT NULL,
+    content         TEXT                     NOT NULL,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_message_conv_created
+    ON chat_message (conversation_id, created_at);
+
