@@ -2,12 +2,10 @@ package dev.samitkumar.ragpipeline.ingestion;
 
 import dev.samitkumar.ragpipeline.ingestion.UploadJob.FileEntry;
 import org.jspecify.annotations.NonNull;
-import org.springframework.modulith.events.Externalized;
 
 import java.time.Instant;
 import java.util.UUID;
 
-@Externalized("rag.ingestion.exchange::file.uploaded")
 public record FileUploadedEvent(
         @NonNull UUID eventId,
         @NonNull UUID jobId,

@@ -102,11 +102,28 @@ class ChatService {
     /** Retrieve relevant chunks from PGVector; gracefully returns empty context on failure. */
     private String buildRagContext(@NonNull String userMessage) {
         try {
+            // ── Step 1: reformulate the query for cross-lingual retrieval ──────────
+            // HyDE: generate a hypothetical passage that "looks like" the target doc
+            // so that the embedding lands near stored chunks in any language.
+            String retrievalQuery = buildRetrievalQuery(userMessage);
+
+            // ── Step 2: tune threshold/topK for document-wide operations ──────────
+            // For translate/summarise requests the raw cosine-similarity is low even
+            // after HyDE; drop the threshold so chunks are never gated out entirely.
+            boolean broadQuery = isDocumentWideQuery(userMessage);
+            int effectiveTopK = broadQuery ? Math.max(props.topK() * 4, 20) : props.topK();
+            double effectiveThreshold = broadQuery ? 0.0 : props.similarityThreshold();
+
+            if (broadQuery) {
+                log.debug("RAG: broad/document-wide query detected — using topK={} threshold={}",
+                        effectiveTopK, effectiveThreshold);
+            }
+
             var docs = vectorStore.similaritySearch(
                     SearchRequest.builder()
-                            .query(userMessage)
-                            .topK(props.topK())
-                            .similarityThreshold(props.similarityThreshold())
+                            .query(retrievalQuery)
+                            .topK(effectiveTopK)
+                            .similarityThreshold(effectiveThreshold)
                             .build());
 
             if (docs.isEmpty()) {
@@ -117,7 +134,9 @@ class ChatService {
             return docs.stream()
                     .map(d -> {
                         String src = (String) d.getMetadata().getOrDefault("source_filename", "unknown");
-                        return "Source: " + src + "\n" + d.getText();
+                        String lang = (String) d.getMetadata().getOrDefault("content_language", "");
+                        String langTag = lang.isBlank() ? "" : " [" + lang + "]";
+                        return "Source: " + src + langTag + "\n" + d.getText();
                     })
                     .collect(Collectors.joining("\n\n---\n\n"));
 
@@ -125,6 +144,81 @@ class ChatService {
             log.warn("Vector-store search failed, proceeding without RAG context: {}", e.getMessage());
             return "No relevant documents found in the knowledge base.";
         }
+    }
+
+    // ── Cross-lingual retrieval ────────────────────────────────────────────
+
+    /**
+     * HyDE (Hypothetical Document Embeddings) reformulation.
+     * <p>
+     * Instead of embedding the raw user query, we ask the LLM to write a SHORT
+     * hypothetical passage that would appear in a source document answering the
+     * request.  The embedding of this passage is semantically closer to actual
+     * stored chunks than the embedding of the intent phrase, especially across
+     * language boundaries (e.g. English intent → Danish document content).
+     * <p>
+     * Controlled by {@code chat.query-reformulation} in application.yaml.
+     * Falls back silently to the original query on any error.
+     */
+    private String buildRetrievalQuery(@NonNull String userMessage) {
+        if (!props.queryReformulation()) {
+            return userMessage;
+        }
+        try {
+            String passage = chatClient.prompt()
+                    .system(HYDE_SYSTEM_PROMPT)
+                    .user(userMessage)
+                    .call()
+                    .content();
+            if (passage == null || passage.isBlank()) {
+                return userMessage;
+            }
+            log.debug("RAG: HyDE passage → '{}'", passage);
+            return passage;
+        } catch (Exception e) {
+            log.warn("HyDE reformulation failed, falling back to original query: {}", e.getMessage());
+            return userMessage;
+        }
+    }
+
+    /**
+     * System prompt for the HyDE reformulation call.
+     * Kept intentionally terse to minimise token cost and round-trip latency.
+     */
+    private static final String HYDE_SYSTEM_PROMPT = """
+            You are a multilingual retrieval expert.
+            Given the user's request, write a SHORT hypothetical document passage \
+            (2–4 sentences) that would most likely be retrieved to fulfil that request.
+
+            Rules:
+            - Focus on SUBJECT MATTER, not the action (translate / summarise / explain)
+            - If the request implies a specific language document \
+            (e.g. "translate this Danish PDF"), write the passage IN THAT LANGUAGE
+            - Include domain-relevant vocabulary so the embedding lands near real chunks
+            - Output ONLY the passage — no preamble, no labels, no explanation
+            """;
+
+    /**
+     * Returns {@code true} when the query asks for a document-wide operation
+     * (translation, summarisation, full explanation, etc.).  For such queries
+     * the vector search is intentionally made more permissive so that chunks in
+     * a different language are still retrieved despite low cosine-similarity to
+     * the English-language intent phrase.
+     */
+    private static boolean isDocumentWideQuery(@NonNull String query) {
+        String q = query.toLowerCase();
+        return q.contains("translat")          // translate / translation
+                || q.contains("oversæt")       // Danish: translate
+                || q.contains("summariz")      // summarize (US)
+                || q.contains("summarise")     // summarise (UK)
+                || q.contains("opsummer")      // Danish: summarise
+                || q.contains("the document")
+                || q.contains("the file")
+                || q.contains("whole document")
+                || q.contains("entire document")
+                || q.contains("full document")
+                || q.contains("explain the")
+                || q.contains("what does the document");
     }
 
     private MessageChatMemoryAdvisor memoryAdvisor(@NonNull String conversationId) {

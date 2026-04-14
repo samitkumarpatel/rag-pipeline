@@ -2,34 +2,18 @@
 ## RAG Pipeline — Spring Modulith
 ##
 ## Services:
-##   rabbitmq       — message broker for @Externalized event publication (outbox pattern)
 ##   postgres       — JPA event publication registry + PGVector store
 ##   ollama         — local LLM / embedding model server
 ##   rag-modulith   — the unified Spring Modulith application
 ##
 ## Quick start:
-##   docker compose up -d rabbitmq postgres ollama
+##   docker compose up -d postgres ollama
 ##   # Pull the embedding model once:
 ##   docker compose exec ollama ollama pull nomic-embed-text
 ##   docker compose up -d rag-modulith
 
 services:
 
-  # ── RabbitMQ ─────────────────────────────────────────────────────────────
-  rabbitmq:
-    image: rabbitmq:4-management
-    container_name: rag-rabbitmq
-    ports:
-      - "5672:5672"    # AMQP
-      - "15672:15672"  # Management UI (guest/guest)
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
 
   # ── PostgreSQL + pgvector ─────────────────────────────────────────────────
   postgres:
@@ -76,11 +60,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASS: ${POSTGRES_PASS:-postgres}
 
-      # RabbitMQ — @Externalized event outbox
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: guest
-      RABBITMQ_PASS: guest
 
       # Ollama — embedding model
       OLLAMA_BASE_URL: http://ollama:11434
@@ -97,8 +76,6 @@ services:
     volumes:
       - upload_data:/data/rag-uploads
     depends_on:
-      rabbitmq:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:
@@ -110,7 +87,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  rabbitmq_data:
   postgres_data:
   ollama_data:
   upload_data:

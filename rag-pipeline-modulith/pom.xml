@@ -61,10 +61,6 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
         <dependency>
@@ -88,16 +84,6 @@
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-jpa</artifactId>
-        </dependency>
-
-        <!--
-            AMQP event externalization: publishes @Externalized events to RabbitMQ
-            via the transactional outbox pattern AFTER the originating transaction commits.
-        -->
-        <dependency>
-            <groupId>org.springframework.modulith</groupId>
-            <artifactId>spring-modulith-events-amqp</artifactId>
-            <scope>runtime</scope>
         </dependency>
 
         <!--
@@ -190,11 +176,6 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>testcontainers-rabbitmq</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

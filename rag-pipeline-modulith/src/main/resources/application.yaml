@@ -19,13 +19,6 @@ spring:
       datetime:
         write-dates-as-timestamps: false
 
-  # ── RabbitMQ — used for @Externalized event publication via outbox pattern ─
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASS:guest}
-    virtual-host: /
 
   # ── PostgreSQL — shared by the event publication registry and PGVector ────
   datasource:
@@ -66,12 +59,26 @@ spring:
           temperature: ${OLLAMA_CHAT_TEMPERATURE:0.7}
           num-ctx: ${OLLAMA_CHAT_NUM_CTX:4096}
       embedding:
-        model: ${OLLAMA_EMBEDDING_MODEL:nomic-embed-text}
+        # ┌─ Embedding model choice ────────────────────────────────────────────┐
+        # │  nomic-embed-text  768 dims  English-optimised (current default)    │
+        # │  bge-m3           1024 dims  100+ languages — recommended for       │
+        # │                             cross-lingual / multilingual workloads   │
+        # │                                                                      │
+        # │  ⚠ Changing the model requires:                                     │
+        # │    1. Update pgvector.dimensions below to match the new model.       │
+        # │    2. Drop and re-create the vector_store table (schema change).     │
+        # │    3. Re-ingest all documents (embeddings are model-specific).       │
+        # │                                                                      │
+        # │  To switch:  ollama pull bge-m3                                     │
+        # │              set OLLAMA_EMBEDDING_MODEL=bge-m3                       │
+        # │              set PGVECTOR_DIMENSIONS=1024                            │
+        # └────────────────────────────────────────────────────────────────────┘
+        model: ${OLLAMA_EMBEDDING_MODEL:bge-m3}
     vectorstore:
       pgvector:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 768
+        dimensions: ${PGVECTOR_DIMENSIONS:1024}   # 768 = nomic-embed-text | 1024 = bge-m3
         initialize-schema: true
 
 # ── Server ─────────────────────────────────────────────────────────────────
@@ -96,9 +103,6 @@ spring.modulith:
       processing: 10m   # PROCESSING for > 10 min → FAILED (listener crashed mid-flight)
       resubmitted: 20m  # RESUBMITTED for > 20 min → FAILED (retry also stuck)
 
-    # Serialize AMQP externalization to prevent race conditions during resubmission
-    externalization:
-      serialize-externalization: true
 
 # ── Actuator ──────────────────────────────────────────────────────────────
 management:
@@ -136,17 +140,18 @@ ingestion:
 
   max-extracted-file-size-bytes: 104857600  # 100 MB
 
-  messaging:
-    exchange: rag.ingestion.exchange
-    routing-key: file.uploaded
-    queue: rag.file.processing.queue
-    dead-letter-queue: rag.file.processing.dlq
 
 # ── Chat module configuration ──────────────────────────────────────────────
 chat:
   top-k: ${CHAT_TOP_K:5}
   similarity-threshold: ${CHAT_SIMILARITY_THRESHOLD:0.5}
   max-history: ${CHAT_MAX_HISTORY:20}
+  # HyDE (Hypothetical Document Embeddings): before every vector-store search
+  # the LLM rewrites the user query into a short hypothetical passage whose
+  # embedding lands closer to actual chunks — especially effective when the
+  # query language differs from the document language.
+  # Set to false to save one LLM round-trip per request.
+  query-reformulation: ${CHAT_QUERY_REFORMULATION:true}
 
 doc-processing:
   chunking:

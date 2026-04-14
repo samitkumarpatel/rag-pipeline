@@ -13,7 +13,7 @@ status tracking served as a REST API.
 2. [Module Map](#module-map)
 3. [Module-to-Module Event Flows](#module-to-module-event-flows)
    - [Flow 1 — Upload → Ingestion](#flow-1--upload--ingestion)
-   - [Flow 2 — Ingestion → Processing (via outbox + RabbitMQ)](#flow-2--ingestion--processing-via-outbox--rabbitmq)
+   - [Flow 2 — Ingestion → Processing (via outbox)](#flow-2--ingestion--processing-via-outbox)
    - [Flow 3 — Processing → Tracking](#flow-3--processing--tracking)
    - [Flow 4 — Status Query API](#flow-4--status-query-api)
 4. [Event Retry & Resilience](#event-retry--resilience)
@@ -47,13 +47,14 @@ status tracking served as a REST API.
 │  │  ChatClient + MessageChatMemoryAdvisor + VectorStore RAG    │     │
 │  └─────────────────────────────────────────────────────────────┘     │
 └──────────────────────────────────────────────────────────────────────┘
-          │                          │
-          ▼                          ▼
-     PostgreSQL                  RabbitMQ
-  (event_publication,         (externalized
-   pipeline_job,               FileUploadedEvent
-   pipeline_file,              → external consumers)
-   vector_store)
+          │
+          ▼
+     PostgreSQL
+  (event_publication,
+   pipeline_job,
+   pipeline_file,
+   vector_store,
+   chat_message)
 ```
 
 **Key design principles (Spring Modulith):**
