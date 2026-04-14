@@ -44,8 +44,10 @@ public class TestcontainersConfiguration {
     OllamaContainer ollamaContainer() {
         var ollama = new OllamaContainer(DockerImageName.parse("ollama/ollama:latest"));
         ollama.start();
+        IO.println("=".repeat(25) + "ollama pull nomic-embed-text" + "=".repeat(25));
         ollama.execInContainer("ollama", "pull", "nomic-embed-text");
-
+        IO.println("=".repeat(25) + "ollama pull llama3.2" + "=".repeat(25));
+        ollama.execInContainer("ollama", "pull", "llama3.2");
         return ollama;
     }
 }

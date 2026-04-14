@@ -27,7 +27,9 @@ class ChatConfig {
 
     @Bean
     ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
+        return builder
+
+                .build();
     }
 }
 
