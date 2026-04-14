@@ -77,15 +77,14 @@ dev.samitkumar.ragpipeline
 │
 ├── ingestion/                           ◀ Module: ingestion
 │   ├── package-info.java                  (no explicit @ApplicationModule — default)
-│   ├── FileUploadedEvent.java           ◀ PUBLIC — @Externalized to RabbitMQ
-│   ├── JobCreatedEvent.java             ◀ PUBLIC — internal outbox only
+│   ├── FileUploadedEvent.java           ◀ PUBLIC — in-process outbox event
+│   ├── JobCreatedEvent.java             ◀ PUBLIC — in-process outbox event
 │   └── UploadJob.java                   ◀ PUBLIC — in-memory value object (not persisted)
 │   └── internal/
 │       ├── IngestionController.java       POST /api/v1/ingestion/upload
 │       ├── IngestionService.java          orchestrates extract → validate → publish
 │       ├── ArchiveExtractor.java          .zip / .tar.gz extraction
 │       ├── FileTypeValidator.java         Apache Tika MIME detection
-│       ├── IngestionRabbitMqConfig.java   exchange / queue / DLQ declarations
 │       ├── IngestionProperties.java       @ConfigurationProperties(prefix="ingestion")
 │       ├── IngestionExceptionHandler.java @RestControllerAdvice
 │       └── StorageHealthIndicator.java    /actuator/health contributor
@@ -169,30 +168,22 @@ IngestionController
 | File bytes | Filesystem `ingestion.storage.base-dir` |
 | `UploadJob` object | **In-memory only** (returned, not persisted) |
 | `JobCreatedEvent` | `event_publication` table (outbox) |
-| `FileUploadedEvent` | `event_publication` table (outbox) + RabbitMQ (after TX commit) |
+| `FileUploadedEvent` | `event_publication` table (outbox) |
 
 ---
 
-### Flow 2 — Ingestion → Processing (via outbox + RabbitMQ)
+### Flow 2 — Ingestion → Processing (via outbox)
 
 ```
 TX commits in IngestionService
   │
   ▼
-Spring Modulith event publication
+Spring Modulith event publication registry
   │
-  ├─ writes FileUploadedEvent to event_publication (status = PUBLISHED)
+  ├─ FileUploadedEvent row written to event_publication (status = PUBLISHED)
+  │   within the same DB transaction as the ingest call — guaranteed atomicity
   │
-  ├─────────────────────────────────────────────────────────────────────┐
-  │  @Externalized("rag.ingestion.exchange::file.uploaded")             │
-  │  → AMQP publish to RabbitMQ exchange                                │
-  │     Exchange : rag.ingestion.exchange  (topic, durable)             │
-  │     Routing  : file.uploaded                                        │
-  │     Queue    : rag.file.processing.queue  (24h TTL)                 │
-  │     DLQ      : rag.file.processing.dlq                              │
-  └─────────────────────────────────────────────────────────────────────┘
-  │
-  ├─ fires @ApplicationModuleListener in processing module (same JVM)
+  └─ fires @ApplicationModuleListener in processing module (same JVM, async)
   │
   ▼
 FileEventHandler.on(FileUploadedEvent)              ← processing.internal
@@ -336,14 +327,6 @@ spring.modulith.events.staleness:
   resubmitted:  20m   # retry also stuck → mark FAILED again
 ```
 
-**RabbitMQ dead-letter queue** for `FileUploadedEvent` external consumers:
-
-```
-rag.file.processing.queue  (24h TTL)
-         │  on expiry / rejection
-         ▼
-rag.file.processing.dlq
-```
 
 ---
 
@@ -621,7 +604,7 @@ ChatClient.prompt()
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /actuator/health` | Health (DB, RabbitMQ, storage) |
+| `GET /actuator/health` | Health (DB, storage) |
 | `GET /actuator/modulith` | Spring Modulith module dependency graph (JSON) |
 | `GET /actuator/metrics` | Micrometer metrics |
 | `GET /actuator/prometheus` | Prometheus scrape endpoint |
@@ -635,9 +618,6 @@ ChatClient.prompt()
 | `ingestion.storage.base-dir` | `/tmp/rag-uploads` | Root directory for stored files |
 | `ingestion.allowed-mime-types` | pdf, docx, doc, txt, jpg, png, tiff, webp | Accepted plain-file types |
 | `ingestion.max-extracted-file-size-bytes` | `104857600` (100 MB) | Per-file size limit in archives |
-| `ingestion.messaging.exchange` | `rag.ingestion.exchange` | AMQP exchange name |
-| `ingestion.messaging.queue` | `rag.file.processing.queue` | Durable processing queue |
-| `ingestion.messaging.dead-letter-queue` | `rag.file.processing.dlq` | Dead-letter queue |
 | `doc-processing.chunking.chunk-size` | `512` | Token chunk size |
 | `doc-processing.chunking.chunk-overlap` | `50` | Chunk overlap |
 | `doc-processing.chunking.min-chunk-size` | `50` | Minimum chunk size |
@@ -658,9 +638,6 @@ ChatClient.prompt()
 POSTGRES_URL=jdbc:postgresql://db:5432/ragdb
 POSTGRES_USER=postgres
 POSTGRES_PASS=secret
-RABBITMQ_HOST=rabbitmq
-RABBITMQ_USER=guest
-RABBITMQ_PASS=guest
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_CHAT_MODEL=llama3.2
 OLLAMA_EMBEDDING_MODEL=nomic-embed-text
@@ -680,8 +657,8 @@ SERVER_PORT=8080
 ### Start infrastructure
 
 ```bash
-# Start PostgreSQL (pgvector), RabbitMQ, Ollama
-docker compose up -d rabbitmq postgres ollama
+# Start PostgreSQL (pgvector) and Ollama
+docker compose up -d postgres ollama
 
 # Pull the embedding model (first time only, ~270 MB)
 docker compose exec ollama ollama pull nomic-embed-text
